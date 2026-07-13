@@ -134,6 +134,388 @@
 
         .input-group {
             display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .time-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        input[type="time"], input[type="text"] {
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        input[type="time"] { flex: 1; }
+        input[id="taskSubject"] { width: 100%; box-sizing: border-box; }
+        input[id="taskDesc"] { width: 100%; box-sizing: border-box; }
+
+        button.add-btn {
+            padding: 10px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        button.add-btn:hover { background-color: #357abd; }
+
+        .task-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .task-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 12px;
+        }
+
+        .task-item:last-child { border-bottom: none; }
+
+        .task-item.completed .task-info {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: var(--primary-color);
+        }
+
+        .task-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .task-time-sub {
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .task-desc { font-size: 15px; }
+
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .container { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="calendar-wrap">
+            <div class="calendar-header">
+                <button id="prevBtn">&lt;</button>
+                <h2 id="monthYear"></h2>
+                <button id="nextBtn">&gt;</button>
+            </div>
+            <div class="days-grid">
+                <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+            </div>
+            <div id="datesGrid" class="dates-grid"></div>
+        </div>
+
+        <div class="details-wrap" id="detailsWrap" style="display: none;">
+            <h3 id="selectedDateDisplay">날짜를 선택하세요</h3>
+            
+            <form id="taskForm" class="task-form">
+                <div class="input-group">
+                    <div class="time-group">
+                        <input type="time" id="startTime" required title="시작 시간">
+                        <span>~</span>
+                        <input type="time" id="endTime" required title="종료 시간">
+                    </div>
+                    <input type="text" id="taskSubject" placeholder="과목명 (예: 화학 II, 미적분)" required>
+                </div>
+                <input type="text" id="taskDesc" placeholder="상세 할 일 (예: 기출문제 3회독, 개념 복습)" required>
+                <button type="submit" class="add-btn">일정 추가</button>
+            </form>
+
+            <ul id="taskList" class="task-list"></ul>
+        </div>
+    </div>
+
+    <script>
+        let plannerData = JSON.parse(localStorage.getItem('myStudyPlanner')) || {};
+        
+        let currentDate = new Date();
+        let selectedDateString = null;
+
+        const monthYearDisplay = document.getElementById('monthYear');
+        const datesGrid = document.getElementById('datesGrid');
+        const detailsWrap = document.getElementById('detailsWrap');
+        const selectedDateDisplay = document.getElementById('selectedDateDisplay');
+        const taskForm = document.getElementById('taskForm');
+        const taskList = document.getElementById('taskList');
+
+        function renderCalendar() {
+            datesGrid.innerHTML = '';
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+
+            monthYearDisplay.textContent = `${year}년 ${month + 1}월`;
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            for (let i = 0; i < firstDay; i++) {
+                const emptyCell = document.createElement('div');
+                datesGrid.appendChild(emptyCell);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateCell = document.createElement('div');
+                dateCell.classList.add('date-cell');
+                dateCell.textContent = day;
+
+                const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                if (plannerData[dateString] && plannerData[dateString].length > 0) {
+                    dateCell.classList.add('has-tasks');
+                }
+
+                if (dateString === selectedDateString) {
+                    dateCell.classList.add('selected');
+                }
+
+                dateCell.addEventListener('click', () => selectDate(dateString));
+                datesGrid.appendChild(dateCell);
+            }
+        }
+
+        function selectDate(dateString) {
+            selectedDateString = dateString;
+            detailsWrap.style.display = 'block';
+            
+            const [year, month, day] = dateString.split('-');
+            selectedDateDisplay.textContent = `${year}년 ${parseInt(month)}월 ${parseInt(day)}일 스케줄`;
+            
+            renderCalendar(); 
+            renderTasks();
+        }
+
+        function renderTasks() {
+            taskList.innerHTML = '';
+            const tasks = plannerData[selectedDateString] || [];
+
+            // 시작 시간을 기준으로 먼저 정렬, 같으면 종료 시간 기준으로 정렬
+            tasks.sort((a, b) => {
+                if (a.startTime === b.startTime) {
+                    return a.endTime.localeCompare(b.endTime);
+                }
+                return a.startTime.localeCompare(b.startTime);
+            });
+
+            tasks.forEach(task => {
+                const li = document.createElement('li');
+                li.classList.add('task-item');
+                if (task.completed) li.classList.add('completed');
+
+                li.innerHTML = `
+                    <input type="checkbox" class="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTask(${task.id})">
+                    <div class="task-info">
+                        <span class="task-time-sub">${task.startTime} ~ ${task.endTime} | ${task.subject}</span>
+                        <span class="task-desc">${task.desc}</span>
+                    </div>
+                    <button class="delete-btn" onclick="deleteTask(${task.id})">삭제</button>
+                `;
+                taskList.appendChild(li);
+            });
+        }
+
+        taskForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+            const subject = document.getElementById('taskSubject').value;
+            const desc = document.getElementById('taskDesc').value;
+
+            // 종료 시간이 시작 시간보다 빠른 경우 경고 (선택적)
+            if (endTime < startTime) {
+                alert("종료 시간이 시작 시간보다 빠를 수 없습니다.");
+                return;
+            }
+
+            if (!plannerData[selectedDateString]) {
+                plannerData[selectedDateString] = [];
+            }
+
+            // 기존 데이터 구조와 호환성을 위해 startTime, endTime 추가
+            plannerData[selectedDateString].push({
+                id: Date.now(),
+                startTime: startTime,
+                endTime: endTime,
+                subject: subject,
+                desc: desc,
+                completed: false
+            });
+
+            saveData();
+            renderTasks();
+            renderCalendar(); 
+            taskForm.reset();
+        });
+
+        window.toggleTask = function(taskId) {
+            const tasks = plannerData[selectedDateString];
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+                task.completed = !task.completed;
+                saveData();
+                renderTasks();
+            }
+        }
+
+        window.deleteTask = function(taskId) {
+            plannerData[selectedDateString] = plannerData[selectedDateString].filter(t => t.id !== taskId);
+            saveData();
+            renderTasks();
+            renderCalendar();
+        }
+
+        function saveData() {
+            localStorage.setItem('myStudyPlanner', JSON.stringify(plannerData));
+        }
+
+        document.getElementById('prevBtn').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        });
+
+        document.getElementById('nextBtn').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+
+        renderCalendar();
+    </script>
+</body>
+</html>
+            flex: 1.2;
+            background: var(--box-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .calendar-header button {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        .calendar-header h2 {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .days-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--text-muted);
+        }
+
+        .dates-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+        }
+
+        .date-cell {
+            aspect-ratio: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 16px;
+            position: relative;
+        }
+
+        .date-cell:hover {
+            background-color: #f0f4f8;
+        }
+
+        .date-cell.selected {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: bold;
+        }
+
+        .date-cell.has-tasks::after {
+            content: '';
+            position: absolute;
+            bottom: 15%;
+            width: 6px;
+            height: 6px;
+            background-color: #ff6b6b;
+            border-radius: 50%;
+        }
+
+        /* 디테일 섹션 (할 일 목록) */
+        .details-wrap {
+            flex: 1;
+            background: var(--box-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            min-height: 400px;
+        }
+
+        .details-wrap h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .task-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            display: flex;
             gap: 10px;
         }
 
